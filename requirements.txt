@@ -1,0 +1,17 @@
+# Freelance-OS Dependencies
+
+# Browser interaction and agents
+browser-use
+playwright
+
+# Google Generative AI integration
+langchain-google-genai
+google-genai
+
+# Local models and testing
+ollama
+pytest
+
+# Utilities
+python-dotenv
+asyncio

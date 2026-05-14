@@ -1,0 +1,31 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific data (don't commit client workspaces or API keys)
+workspace/*/
+!workspace/.gitkeep
+!workspace/CONTEXT_TEMPLATE.md
+leads/active_leads.json
+leads/ranked_leads.json
+!leads/.gitkeep
+
+# Testing
+.pytest_cache/
+browser_data/
