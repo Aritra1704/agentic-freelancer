@@ -5,6 +5,7 @@ import os
 from browser_use import Agent, Browser
 from browser_use.browser.profile import BrowserProfile
 from core.llm_factory import LLMFactory
+from agents.upwork_scout_playwright import UpworkScoutPlaywright
 
 class ScoutAgent:
     def __init__(self, platform="Upwork"):
@@ -15,7 +16,7 @@ class ScoutAgent:
         
         # Configure persistent browser via BrowserProfile
         self.profile = BrowserProfile(
-            user_data_dir="./browser_data"
+            user_data_dir="./browser-use-user-data-dir-local"
         )
         self.browser = Browser(
             headless=False,
@@ -26,11 +27,19 @@ class ScoutAgent:
 
     async def hunt(self):
         print(f"--- The Scout is starting a hunt on {self.platform} ---")
+        
+        if self.platform.lower() == "upwork":
+            playwright_scout = UpworkScoutPlaywright(user_data_dir="./browser-use-user-data-dir-local")
+            result = await playwright_scout.hunt()
+            # UpworkScoutPlaywright already saves the leads, so we just return the list
+            return result
+
         task = (
             f"Go to {self.platform}.com. You should already be logged in. "
             "Search for 'Python AI Agent', 'LLM Integration', and 'RAG'. "
-            "Extract the first 5 job listings: title, budget, description snippet, and job URL. "
-            "Return ONLY a raw JSON array of objects representing these jobs, without any markdown formatting."
+            "Read the first 5 job listings to find the title, budget, description snippet, and job URL. "
+            "IMPORTANT: Once you have the data, you MUST call the 'done' tool and pass the raw JSON array of the jobs as the 'text' argument. "
+            "Do NOT try to use a tool named 'items'."
         )
 
         agent = Agent(

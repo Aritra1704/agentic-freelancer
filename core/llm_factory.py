@@ -28,10 +28,10 @@ class LLMFactory:
     @staticmethod
     def get_model_instance(tier="flash"):
         models = {
-            "pro": "gemini-1.5-pro",
-            "flash": "gemini-1.5-flash",
+            "pro": "gemini-2.5-pro",
+            "flash": "gemini-2.5-flash",
         }
-        model_name = models.get(tier, "gemini-1.5-flash")
+        model_name = models.get(tier, "gemini-2.5-flash")
         llm = ChatGoogleGenerativeAI(model=model_name)
         
         # Wrap the llm for browser-use compatibility
@@ -40,8 +40,8 @@ class LLMFactory:
     @staticmethod
     def get_model(tier="flash"):
         models = {
-            "pro": "gemini-1.5-pro",
-            "flash": "gemini-1.5-flash",
+            "pro": "gemini-2.5-pro",
+            "flash": "gemini-2.5-flash",
             "local": "llama3"
         }
-        return models.get(tier, "gemini-1.5-flash")
+        return models.get(tier, "gemini-2.5-flash")

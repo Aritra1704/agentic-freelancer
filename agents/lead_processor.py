@@ -20,8 +20,24 @@ class LeadProcessor:
             f"RAW TEXT: {raw_content}"
         )
 
-        clean_json = self.bridge.generate_code(prompt)
+        response = self.bridge.generate_code(prompt)
         
+        # Extract JSON from response (handling conversational filler)
+        clean_json = response
+        if "[" in response and "]" in response:
+            clean_json = response[response.find("["):response.rfind("]")+1]
+        
+        # Basic validation: try to parse it. If it fails, use the raw content if it was already JSON.
+        try:
+            json.loads(clean_json)
+        except json.JSONDecodeError:
+            print("⚠️ Ollama returned invalid JSON. Falling back to raw data.")
+            try:
+                json.loads(raw_content)
+                clean_json = raw_content
+            except:
+                clean_json = "[]"
+
         # Save the refined leads
         refined_path = raw_data_path.replace("active_leads", "refined_leads")
         with open(refined_path, "w") as f:

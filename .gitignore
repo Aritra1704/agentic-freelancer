@@ -29,3 +29,4 @@ leads/ranked_leads.json
 # Testing
 .pytest_cache/
 browser_data/
+browser-use-user-data-dir-local/

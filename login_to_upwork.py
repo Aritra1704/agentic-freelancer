@@ -9,14 +9,33 @@ async def login():
     
     async with async_playwright() as p:
         browser = await p.chromium.launch_persistent_context(
-            user_data_dir="./browser_data",
+            user_data_dir="./browser-use-user-data-dir-local",
             headless=False,
             no_viewport=False,
             channel="chrome",
-            args=["--disable-blink-features=AutomationControlled"]
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-extensions",
+                "--disable-gpu"
+            ]
         )
         page = await browser.new_page()
-        await page.goto("https://www.upwork.com/ab/account-security/login")
+        
+        # Increase default timeout
+        page.set_default_timeout(60000)
+        
+        # Add logging so we can see exactly what causes the crash
+        page.on("pageerror", lambda err: print(f"❌ PAGE ERROR: {err}"))
+        page.on("console", lambda msg: print(f"📝 CONSOLE ({msg.type}): {msg.text}"))
+        
+        print("🌐 Navigating to Upwork Login...")
+        try:
+            await page.goto("https://www.upwork.com/ab/account-security/login", wait_until="domcontentloaded")
+        except Exception as e:
+            print(f"⚠️ Initial navigation error: {e}. Retrying...")
+            await page.goto("https://www.upwork.com/ab/account-security/login")
         
         try:
             # Wait for the browser to be closed by the user
