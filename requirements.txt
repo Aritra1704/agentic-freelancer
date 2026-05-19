@@ -18,3 +18,5 @@ asyncio
 sqlalchemy
 psycopg2-binary
 notion-client
+fastapi
+uvicorn

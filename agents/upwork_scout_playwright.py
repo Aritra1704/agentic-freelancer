@@ -1,20 +1,19 @@
 import asyncio
 import json
 import os
-import hashlib
 import random
 from playwright.async_api import async_playwright
-from core.database import SessionLocal, Lead
+from core.database import Lead, SessionLocal
 from core.notion_service import NotionService
+from core.orchestrator import Stitcher
 
 class UpworkScoutPlaywright:
-    def __init__(self, user_data_dir="./browser-use-user-data-dir-local"):
+    def __init__(self, user_data_dir="./browser-use-user-data-dir-local", platform="Upwork"):
         self.user_data_dir = user_data_dir
         self.output_path = "leads/active_leads.json"
+        self.platform = platform
         self.notion_service = NotionService()
-
-    def _generate_id(self, url):
-        return hashlib.md5(url.encode()).hexdigest()
+        self.stitcher = Stitcher()
 
     async def hunt(self, keywords=["Python AI Agent", "LLM Integration", "RAG"], negative_constraints=""):
         print(f"--- Upwork Playwright Scout is starting a hunt ---")
@@ -128,17 +127,15 @@ class UpworkScoutPlaywright:
                         job_data.update(await self._enrich_job_details(context, clean_url))
                     
                     # Save to DB
-                    new_lead = Lead(
-                        id=self._generate_id(clean_url),
-                        platform="Upwork",
+                    new_lead = self.stitcher.create_lead(
+                        platform=self.platform,
                         title=job_data["title"],
                         url=clean_url,
                         budget=job_data["budget"],
                         description=job_data["description"],
                         raw_data=job_data,
-                        status="new"
+                        db=db,
                     )
-                    db.add(new_lead)
                     created_leads.append(new_lead)
                     jobs.append(job_data)
                     new_leads_count += 1

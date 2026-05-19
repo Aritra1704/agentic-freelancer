@@ -30,3 +30,5 @@ leads/ranked_leads.json
 .pytest_cache/
 browser_data/
 browser-use-user-data-dir-local/
+dashboard/node_modules/
+dashboard/.next/

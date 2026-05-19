@@ -80,6 +80,7 @@ class NotionService:
         suggested_stack=None,
         quotation=None,
         status="Draft",
+        deliverables=None,
     ):
         """
         Creates or updates a strategy row in Notion and links it back to the lead.
@@ -103,9 +104,12 @@ class NotionService:
         if quotation is not None:
             properties["Quotation"] = {"number": quotation}
         if self._database_has_property(self.strategy_db_id, "Pitch Content"):
-            properties["Pitch Content"] = {
-                "rich_text": [{"text": {"content": proposal_content[:1900]}}]
-            }
+            pitch_body = proposal_content
+            if deliverables:
+                links = self._format_deliverable_links(deliverables)
+                if links:
+                    pitch_body = f"{proposal_content}\n\nDeliverables:\n{links}"
+            properties["Pitch Content"] = {"rich_text": [{"text": {"content": pitch_body[:1900]}}]}
 
         existing_page = self.find_strategy_page(lead_url=lead_url, lead_title=lead_title)
         if existing_page:
@@ -216,6 +220,14 @@ class NotionService:
             if link:
                 index[link] = {"page_id": page["id"], "title": title}
         return index
+
+    def _format_deliverable_links(self, deliverables):
+        lines = []
+        for label, payload in (deliverables or {}).items():
+            pdf_url = payload.get("pdf_url") if isinstance(payload, dict) else None
+            if pdf_url:
+                lines.append(f"- {label}: {pdf_url}")
+        return "\n".join(lines)
 
     def _safe_query(self, database_id, **kwargs):
         """

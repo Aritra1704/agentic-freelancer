@@ -1,5 +1,6 @@
 # freelance-os/skills/notion_skill.py
 import os
+from core.notion_service import NotionService
 
 class NotionSkill:
     """
@@ -7,20 +8,20 @@ class NotionSkill:
     """
     def __init__(self, api_token=None):
         self.api_token = api_token or os.getenv("NOTION_API_KEY")
+        self.service = NotionService(notion_token=self.api_token)
 
-    def scaffold_client_portal(self, project_name, roadmap):
+    def scaffold_client_portal(self, project_name, roadmap, deliverables=None):
         """
-        In a real scenario, this uses the Notion API to:
-        1. Create a new Page.
-        2. Create a 'Tasks' database.
-        3. Add the 'CONTEXT.md' to the portal.
+        Creates a lightweight structure description for a client portal and
+        preserves generated deliverables in a way that can be pushed to Notion
+        later.
         """
         print(f"--- [NOTION SKILL] Scaffolding portal for: {project_name} ---")
-        # Logic to call Notion API goes here
         portal_structure = {
             "title": project_name,
             "sections": ["Roadmap", "Technical Docs", "Meeting Notes"],
-            "roadmap": roadmap
+            "roadmap": roadmap,
+            "deliverables": deliverables or {},
         }
         return f"Notion Portal Structure Generated: {portal_structure}"
 

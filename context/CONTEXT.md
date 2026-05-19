@@ -4,7 +4,7 @@
 Freelance-OS is built on the following principles, inspired by Matt Pocock:
 
 ### 1. `grill-me` (Alignment)
-The agent must interrogate the user/client *before* writing code to pin down the design space and uncover hidden assumptions. The **Strategist Agent** uses this logic for leads.
+The agent must interrogate the user/client *before* writing code to pin down the design space and uncover hidden assumptions. The **Strategist Agent** uses the `technical_doubts` field (captured as a requirement during the refinement stage) to generate these high-signal alignment questions.
 
 ### 2. `ubiquitous-language` (Terminology)
 A shared glossary ensures consistency. (See "Vocabulary" below). Every client project in `workspace/` MUST start with a `CONTEXT.md`.

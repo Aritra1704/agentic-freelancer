@@ -1,5 +1,7 @@
 # freelance-os/agents/trust_agent.py
 import os
+from skills.canva_skill import CanvaSkill
+from skills.notion_skill import NotionSkill
 
 class TrustAgent:
     """
@@ -9,8 +11,10 @@ class TrustAgent:
     def __init__(self, project_name):
         self.project_name = project_name
         self.portal_url = f"https://notion.so/client-portals/{project_name}"
+        self.notion_skill = NotionSkill()
+        self.canva_skill = CanvaSkill()
 
-    def generate_client_onboarding(self):
+    def generate_client_onboarding(self, deliverables=None):
         """
         Drafts the structure for the Notion Client Portal.
         """
@@ -20,7 +24,11 @@ class TrustAgent:
             "Phase 2: Core Logic Implementation & API Specs (Day 2)",
             "Phase 3: Integration & Final Refinement (Day 3)"
         ]
-        return "\n".join(roadmap)
+        return self.notion_skill.scaffold_client_portal(
+            project_name=self.project_name,
+            roadmap=roadmap,
+            deliverables=deliverables,
+        )
 
     def create_canva_brief(self, requirements):
         """

@@ -3,6 +3,7 @@ import os
 from core.llm_factory import LLMFactory
 from core.ollama_bridge import OllamaBridge
 from core.skill_loader import load_playbook
+from skills.docker_skill import DockerSkill
 
 class BuilderAgent:
     """
@@ -14,6 +15,7 @@ class BuilderAgent:
         self.workspace_path = f"workspace/{project_name}"
         self.pro_model = LLMFactory.get_model_instance("pro")
         self.bridge = OllamaBridge(model="llama3")
+        self.docker_skill = DockerSkill()
         self.security_playbook = load_playbook("security-auditor", max_chars=5000)
         self._setup_workspace()
 
@@ -21,6 +23,18 @@ class BuilderAgent:
         os.makedirs(f"{self.workspace_path}/src", exist_ok=True)
         os.makedirs(f"{self.workspace_path}/tests", exist_ok=True)
         print(f"--- Workspace created at {self.workspace_path} ---")
+
+    def _write_deployment_assets(self):
+        dockerfile_path = f"{self.workspace_path}/Dockerfile"
+        dockerignore_path = f"{self.workspace_path}/.dockerignore"
+        compose_path = f"{self.workspace_path}/docker-compose.yml"
+        with open(dockerfile_path, "w") as f:
+            f.write(self.docker_skill.generate_dockerfile())
+        with open(dockerignore_path, "w") as f:
+            f.write(self.docker_skill.generate_dockerignore())
+        with open(compose_path, "w") as f:
+            f.write(self.docker_skill.generate_compose(self.project_name))
+        print(f"--- Docker assets generated in {self.workspace_path} ---")
 
     def design_and_build(self, feature_request):
         """
@@ -67,6 +81,7 @@ class BuilderAgent:
         with open(impl_path, "w") as f:
             f.write(refined_code)
         print(f"--- Architecture Pass complete (Entropy Control) ---")
+        self._write_deployment_assets()
 
 if __name__ == "__main__":
     builder = BuilderAgent("demo_project")

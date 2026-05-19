@@ -2,8 +2,9 @@
 import re
 import json
 from core.ollama_bridge import OllamaBridge
-from core.database import SessionLocal, Lead
+from core.database import Lead, SessionLocal
 from core.notion_service import NotionService
+from core.orchestrator import Stitcher
 from core.skill_loader import load_playbook
 
 class LeadProcessor:
@@ -14,6 +15,7 @@ class LeadProcessor:
     def __init__(self):
         self.bridge = OllamaBridge(model="llama3")
         self.notion_service = NotionService()
+        self.stitcher = Stitcher()
         self.market_sizing_playbook = load_playbook("market-sizing-analysis", max_chars=3000)
         self.market_opportunity_playbook = load_playbook(
             "startup-business-analyst-market-opportunity",
@@ -49,12 +51,12 @@ class LeadProcessor:
             return json_str
         return text.strip()
 
-    def refine_new_leads(self):
+    def refine_new_leads(self, limit=None):
         """
-        Processes all leads with status 'new' from the database.
+        Processes all leads with status 'scraped' from the database.
         """
         db = SessionLocal()
-        new_leads = db.query(Lead).filter(Lead.status == "new").all()
+        new_leads = self.stitcher.claim_for_refinement(limit=limit, db=db)
         
         if not new_leads:
             print("ℹ️ No new leads to refine.")
@@ -70,7 +72,8 @@ class LeadProcessor:
                 "You are a data cleaner. Below is raw text from a web scraper. "
                 "Extract a valid JSON object for this job. "
                 "Required fields: 'title', 'budget', 'url'. "
-                "Optional fields: 'opportunity_score' (0-100 integer), 'qualification_notes' (one sentence). "
+                "Optional fields: 'opportunity_score' (0-100 integer), 'qualification_notes' (one sentence), "
+                "'tags' (list of technologies or skills), 'technical_doubts' (list of client questions to resolve). "
                 "If budget is missing, use 'Unknown'. Return ONLY the JSON. "
                 f"### MARKET SIZING GUIDELINES\n{self.market_sizing_playbook or 'No market sizing playbook available.'}\n\n"
                 f"### MARKET OPPORTUNITY GUIDELINES\n{self.market_opportunity_playbook or 'No market opportunity playbook available.'}\n\n"
@@ -90,15 +93,21 @@ class LeadProcessor:
                     merged_raw_data["opportunity_score"] = clean_data["opportunity_score"]
                 if "qualification_notes" in clean_data:
                     merged_raw_data["qualification_notes"] = clean_data["qualification_notes"]
+                if "tags" in clean_data and isinstance(clean_data["tags"], list):
+                    merged_raw_data["tags"] = clean_data["tags"]
+                    lead.suggested_stack = clean_data["tags"]
+                if "technical_doubts" in clean_data and isinstance(clean_data["technical_doubts"], list):
+                    lead.technical_doubts = clean_data["technical_doubts"]
                 
                 # Check for Notion page ID if missing in DB but exists in Notion
                 if not merged_raw_data.get("notion_page_id"):
                     notion_page = self.notion_service.find_lead_page(link=lead.url, title=lead.title)
                     if notion_page:
                         merged_raw_data["notion_page_id"] = notion_page["id"]
+                        lead.notion_lead_page_id = notion_page["id"]
 
                 lead.raw_data = merged_raw_data
-                lead.status = "refined"
+                self.stitcher.transition(lead.id, "refined", db=db)
                 
                 try:
                     self.notion_service.update_lead_status(
@@ -111,7 +120,7 @@ class LeadProcessor:
                     print(f"⚠️ Notion status sync failed for lead {lead.id}: {notion_exc}")
             except Exception as e:
                 print(f"⚠️ Error refining lead {lead.id}: {e}")
-                lead.status = "refinement_failed"
+                self.stitcher.mark_error(lead.id, "refining", str(e), db=db)
         
         db.commit()
         db.close()

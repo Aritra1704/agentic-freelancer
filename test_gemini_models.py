@@ -1,26 +1,27 @@
 import os
-from langchain_google_genai import ChatGoogleGenerativeAI
+
+import pytest
 from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 
 load_dotenv()
 
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_LIVE_GEMINI_TESTS") != "1" or not os.getenv("GOOGLE_API_KEY"),
+    reason="Live Gemini checks are disabled unless RUN_LIVE_GEMINI_TESTS=1 and GOOGLE_API_KEY is set.",
+)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+    ],
+)
 def test_model(name):
-    print(f"Testing model: {name}...")
-    try:
-        llm = ChatGoogleGenerativeAI(model=name)
-        response = llm.invoke("Hi")
-        print(f"✅ {name} works!")
-        return True
-    except Exception as e:
-        print(f"❌ {name} failed: {e}")
-        return False
-
-models_to_test = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-3.1-pro-preview",
-    "gemini-3.1-flash-lite"
-]
-
-for model in models_to_test:
-    test_model(model)
+    llm = ChatGoogleGenerativeAI(model=name)
+    response = llm.invoke("Hi")
+    assert response.content

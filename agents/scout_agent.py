@@ -4,11 +4,13 @@ import json
 import os
 from browser_use import Agent, Browser
 from browser_use.browser.profile import BrowserProfile
+from agents.upwork_scout_playwright import UpworkScoutPlaywright
+from core.database import Lead, SessionLocal
 from core.llm_factory import LLMFactory
 from core.memory_manager import MemoryManager
 from core.notion_service import NotionService
+from core.orchestrator import Stitcher
 from core.skill_loader import load_playbook
-from agents.upwork_scout_playwright import UpworkScoutPlaywright
 
 class ScoutAgent:
     def __init__(self, platform="Upwork"):
@@ -22,6 +24,13 @@ class ScoutAgent:
             max_chars=4000,
         )
         self.notion_service = NotionService()
+        self.stitcher = Stitcher()
+        self.platform_configs = {
+            "upwork": {"home": "https://www.upwork.com/nx/search/jobs/"},
+            "fiverr": {"home": "https://www.fiverr.com/search/gigs"},
+            "contra": {"home": "https://contra.com/opportunities/discover"},
+            "freelancer": {"home": "https://www.freelancer.com/jobs/"},
+        }
         
         # Configure persistent browser via BrowserProfile
         self.profile = BrowserProfile(
@@ -66,7 +75,10 @@ class ScoutAgent:
         negative_constraints = self.pre_flight_check(keywords)
         
         if self.platform.lower() == "upwork":
-            playwright_scout = UpworkScoutPlaywright(user_data_dir="./browser-use-user-data-dir-local")
+            playwright_scout = UpworkScoutPlaywright(
+                user_data_dir="./browser-use-user-data-dir-local",
+                platform=self.platform,
+            )
             result = await playwright_scout.hunt(
                 keywords=keywords,
                 negative_constraints=negative_constraints,
@@ -75,14 +87,15 @@ class ScoutAgent:
         
         # Generic browser-use fallback for other platforms
         task = (
-            f"Go to {self.platform}.com. You should already be logged in. "
+            f"Go to {self.platform_configs.get(self.platform.lower(), {}).get('home', f'https://{self.platform}.com')}. "
+            "You should already be logged in. "
             f"Search for '{', '.join(keywords)}'. "
             f"Historical failure guardrails: {negative_constraints}. "
             "Use the following expert lead-qualification guidelines when deciding which listings are worth capturing. "
             f"### MARKET SIZING GUIDELINES\n{self.market_sizing_playbook or 'No market sizing playbook available.'}\n\n"
             f"### MARKET OPPORTUNITY GUIDELINES\n{self.market_opportunity_playbook or 'No market opportunity playbook available.'}\n\n"
             "Apply those guardrails before retrying any anti-bot, login, or extraction step. "
-            "Read the first 5 job listings to find the title, budget, description snippet, and job URL. "
+            "Read the first 5 job listings to find the title, budget, description snippet, skills/tags if present, and job URL. "
             "IMPORTANT: Once you have the data, you MUST call the 'done' tool and pass the raw JSON array of the jobs as the 'text' argument. "
         )
 
@@ -101,9 +114,6 @@ class ScoutAgent:
         """
         Parses agent result and saves new leads to the database.
         """
-        from core.database import SessionLocal, Lead
-        import hashlib
-        
         content = result.final_result() if hasattr(result, 'final_result') and result.final_result() else "[]"
         
         # Clean markdown
@@ -122,23 +132,19 @@ class ScoutAgent:
                 # Check duplicate
                 if db.query(Lead).filter(Lead.url == url).first():
                     continue
-                
-                lead_id = hashlib.md5(url.encode()).hexdigest()
-                new_lead = Lead(
-                    id=lead_id,
+
+                new_lead = self.stitcher.create_lead(
                     platform=self.platform,
                     title=job.get("title", "N/A"),
                     url=url,
                     budget=job.get("budget", "Unknown"),
                     description=job.get("description", "N/A"),
                     raw_data=job,
-                    status="new"
+                    db=db,
                 )
-                db.add(new_lead)
                 created_leads.append(new_lead)
                 new_count += 1
             
-            db.commit()
             self._sync_new_leads_to_notion(db, created_leads)
             db.close()
             print(f"✅ Added {new_count} new leads from {self.platform} to DB.")
@@ -164,6 +170,7 @@ class ScoutAgent:
                 if result.get("ok") and result.get("page_id"):
                     lead.raw_data = dict(lead.raw_data or {})
                     lead.raw_data["notion_page_id"] = result["page_id"]
+                    lead.notion_lead_page_id = result["page_id"]
             except Exception as exc:
                 print(f"⚠️ Notion sync failed for lead '{lead.title}': {exc}")
 

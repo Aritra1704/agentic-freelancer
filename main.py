@@ -10,61 +10,42 @@ from agents.scout_agent import ScoutAgent
 from agents.lead_processor import LeadProcessor
 from agents.strategist_agent import StrategistAgent
 from agents.builder_agent import BuilderAgent
+from core.database import PipelineStatus, init_db
 from core.memory_manager import MemoryManager
+from core.orchestrator import Stitcher
 
 class FreelanceOS:
     """
     The Orchestrator: Connects the Scout, Strategist, and Builder.
     """
-    def __init__(self):
+    def __init__(self, platform="Upwork"):
         print("🚀 Initializing Freelance-OS: AI-Native Edition")
-        self.scout = ScoutAgent()
+        self.platform = platform
+        self.scout = ScoutAgent(platform=platform)
         self.processor = LeadProcessor()
         self.strategist = StrategistAgent()
+        self.stitcher = Stitcher()
 
-    async def run_hunt(self):
+    async def run_hunt(self, refine=False):
         """Phase 1: Scout for new leads."""
-        print("\n🔍 Phase 1: Scouting for leads...")
+        print(f"\n🔍 Phase 1: Scouting for leads on {self.platform}...")
         await self.scout.hunt()
-        self.processor.refine_new_leads()
-        print("✅ Hunting and refinement complete.")
+        if refine:
+            self.processor.refine_new_leads()
+            print("✅ Hunting and refinement complete.")
+        else:
+            print("✅ Hunting complete.")
 
     def run_strategy(self):
         """Phase 2: Analyze leads and draft proposals."""
         print("\n🧠 Phase 2: Strategizing and drafting proposals...")
-        from core.database import SessionLocal, Lead
-        db = SessionLocal()
         try:
-            # Get refined leads
-            leads = db.query(Lead).filter(Lead.status == "refined").all()
-            
-            if not leads:
-                print("ℹ️ No refined leads found. Run 'hunt' first.")
-                return
-
-            for lead in leads[:2]:  # Focus on top 2 leads
-                # Convert DB model to dict for strategist
-                lead_dict = {
-                    "title": lead.title,
-                    "url": lead.url,
-                    "budget": lead.budget,
-                    "description": lead.description,
-                    "notion_page_id": (lead.raw_data or {}).get("notion_page_id"),
-                    "suggested_stack": (lead.raw_data or {}).get("tags", []),
-                    "quotation": (lead.raw_data or {}).get("quotation"),
-                }
-                proposal = self.strategist.analyze_lead(lead_dict)
+            results = self.strategist.strategize_refined_leads(limit=2)
+            for lead, proposal in results:
                 print(f"\n--- Proposal for: {lead.title} ---")
                 print(proposal)
-                
-                # Optionally mark as 'applied' or 'strategized'
-                lead.status = "strategized"
-            
-            db.commit()
         except Exception as e:
             print(f"❌ Error in strategy phase: {e}")
-        finally:
-            db.close()
 
     def run_build(self, project_name, feature):
         """Phase 3: Execute a project using TDD."""
@@ -72,6 +53,28 @@ class FreelanceOS:
         builder = BuilderAgent(project_name)
         builder.design_and_build(feature)
         print("✅ Project build complete.")
+
+    async def run_orchestrator(self):
+        """
+        Executes the stitched pipeline based on current DB state.
+        """
+        print("\n🪡 Running Stitch Orchestrator...")
+        pending = self.stitcher.get_pending_tasks()
+        if not pending[PipelineStatus.SCRAPED.value] and not pending[PipelineStatus.REFINED.value]:
+            await self.run_hunt(refine=False)
+            pending = self.stitcher.get_pending_tasks()
+
+        if pending[PipelineStatus.SCRAPED.value]:
+            self.processor.refine_new_leads()
+            pending = self.stitcher.get_pending_tasks()
+
+        if pending[PipelineStatus.REFINED.value]:
+            self.run_strategy()
+
+        if pending[PipelineStatus.ERROR.value]:
+            print(f"⚠️ {len(pending[PipelineStatus.ERROR.value])} leads remain in error state.")
+        else:
+            print("✅ Stitch orchestrator completed without pending errors.")
 
     @staticmethod
     def run_learn():
@@ -102,20 +105,23 @@ class FreelanceOS:
 
 async def main():
     parser = argparse.ArgumentParser(description="Freelance-OS CLI")
-    parser.add_argument("command", choices=["hunt", "strategize", "build", "full-cycle", "learn"])
+    parser.add_argument("command", choices=["hunt", "strategize", "build", "full-cycle", "learn", "run-orchestrator"])
     parser.add_argument("--name", help="Project name for building")
     parser.add_argument("--feature", help="Feature description for building")
+    parser.add_argument("--platform", default="Upwork", help="Lead platform to scout (Upwork, Fiverr, Contra, Freelancer)")
+    parser.add_argument("--refine", action="store_true", help="Immediately refine leads after hunting")
     
     args = parser.parse_args()
+    init_db()
 
     if args.command == "learn":
         FreelanceOS.run_learn()
         return
 
-    os_instance = FreelanceOS()
+    os_instance = FreelanceOS(platform=args.platform)
 
     if args.command == "hunt":
-        await os_instance.run_hunt()
+        await os_instance.run_hunt(refine=args.refine)
     elif args.command == "strategize":
         os_instance.run_strategy()
     elif args.command == "build":
@@ -124,8 +130,10 @@ async def main():
         else:
             os_instance.run_build(args.name, args.feature)
     elif args.command == "full-cycle":
-        await os_instance.run_hunt()
+        await os_instance.run_hunt(refine=True)
         os_instance.run_strategy()
+    elif args.command == "run-orchestrator":
+        await os_instance.run_orchestrator()
 
 if __name__ == "__main__":
     asyncio.run(main())

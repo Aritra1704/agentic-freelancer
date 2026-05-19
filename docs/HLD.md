@@ -55,7 +55,12 @@ To transform from a CLI tool into a comprehensive Strategy Engine, we are planni
 - **Notion Sync:** Complete.
 
 ### Pending Tasks
-- [ ] **Multi-Platform Support:** Fiverr/Contra integration.
-- [ ] **The Control Tower (Dashboard):** Build the Next.js/FastAPI UI.
-- [ ] **Docker Skill:** Mature the skeletal implementation in `skills/docker_skill.py`.
-- [ ] **Refactor Leads:** Refactor `Leads` table to include structured strategy fields (HLD/LLD/Cost).
+- [x] **Multi-Platform Support:** Fiverr/Contra/Freelancer paths are now supported through platform-aware scouting and login helpers.
+- [x] **The Control Tower (Dashboard):** FastAPI backend and a minimal Next.js dashboard scaffold have been added.
+- [x] **Docker Skill:** `skills/docker_skill.py` now generates deployment assets and performs real build verification when Docker is present.
+- [x] **Refactor Leads:** `Lead` now stores structured strategy fields (HLD/LLD/quotation/milestones/feedback).
+- [x] **Stitch Orchestration Engine:** State machine and `run-orchestrator` CLI flow implemented (`docs/STITCH_ORCHESTRATOR_PLAN.md`).
+- [ ] **Canva Integration:** Code path is implemented, but live Canva app credentials/template IDs still need real environment configuration.
+
+### Backlog
+For detailed system gaps and future tasks, see [BACKLOG.md](./BACKLOG.md).

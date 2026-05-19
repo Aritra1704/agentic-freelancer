@@ -2,7 +2,10 @@
 from core.llm_factory import LLMFactory
 from core.memory_manager import MemoryManager
 from core.notion_service import NotionService
+from core.orchestrator import Stitcher
 from core.skill_loader import load_playbook
+from skills.canva_skill import CanvaSkill
+from skills.notion_skill import NotionSkill
 
 class StrategistAgent:
     """
@@ -14,6 +17,9 @@ class StrategistAgent:
         self.llm = LLMFactory.get_model_instance("pro")
         self.portfolio_path = "context/portfolio.md"
         self.notion_service = NotionService()
+        self.stitcher = Stitcher()
+        self.canva_skill = CanvaSkill()
+        self.notion_skill = NotionSkill()
         self.conversion_playbook = load_playbook("marketing-psychology", max_chars=5000)
 
     def pre_flight_check(self, job_data):
@@ -77,6 +83,15 @@ class StrategistAgent:
         )
 
         try:
+            deliverables = self.canva_skill.create_deliverables(
+                {
+                    "title": job_data["title"],
+                    "budget": job_data.get("budget"),
+                    "suggested_stack": job_data.get("suggested_stack") or [],
+                    "quotation": job_data.get("quotation"),
+                    "pitch_content": proposal_content,
+                }
+            )
             strategy_sync = self.notion_service.add_strategy(
                 lead_title=job_data["title"],
                 lead_url=job_data.get("url"),
@@ -84,6 +99,7 @@ class StrategistAgent:
                 suggested_stack=(job_data.get("suggested_stack") or [])[:10],
                 quotation=job_data.get("quotation"),
                 status="Draft",
+                deliverables=deliverables,
             )
             self.notion_service.update_lead_status(
                 link=job_data.get("url"),
@@ -91,10 +107,97 @@ class StrategistAgent:
                 status="Strategized",
                 page_id=job_data.get("notion_page_id") or strategy_sync.get("lead_page_id"),
             )
+            self.notion_skill.scaffold_client_portal(
+                project_name=job_data["title"],
+                roadmap=[
+                    "Phase 1: discovery and architecture alignment",
+                    "Phase 2: implementation and integration",
+                    "Phase 3: verification and delivery",
+                ],
+                deliverables=deliverables,
+            )
         except Exception as notion_exc:
             print(f"⚠️ Notion strategy sync failed for '{job_data['title']}': {notion_exc}")
 
         return proposal_content
+
+    def strategize_refined_leads(self, limit=2):
+        """
+        Claims refined leads, generates proposals, and persists structured strategy
+        fields back onto the lead records.
+        """
+        from core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            leads = self.stitcher.claim_for_strategy(limit=limit, db=db)
+            if not leads:
+                print("ℹ️ No refined leads found. Run 'hunt' first.")
+                return []
+
+            results = []
+            for lead in leads:
+                lead_dict = {
+                    "title": lead.title,
+                    "url": lead.url,
+                    "budget": lead.budget,
+                    "description": lead.description,
+                    "notion_page_id": lead.notion_lead_page_id or (lead.raw_data or {}).get("notion_page_id"),
+                    "suggested_stack": lead.suggested_stack or (lead.raw_data or {}).get("tags", []),
+                    "quotation": lead.quotation or (lead.raw_data or {}).get("quotation"),
+                }
+                try:
+                    proposal = self.analyze_lead(lead_dict)
+                    lead.pitch_content = proposal
+                    lead.suggested_stack = lead_dict["suggested_stack"] or lead.suggested_stack
+                    if not lead.technical_doubts:
+                        lead.technical_doubts = [
+                            "Confirm deployment environment and data boundaries.",
+                            "Clarify acceptance criteria for the first milestone.",
+                            "Confirm integration constraints and API ownership.",
+                        ]
+                    if not lead.milestones:
+                        lead.milestones = [
+                            "Day 1: discovery and architecture alignment",
+                            "Day 2: implementation and integration",
+                            "Day 3: validation, polish, and handoff",
+                        ]
+                    if not lead.quotation:
+                        lead.quotation = {"baseline": lead.budget, "premium": None}
+                    if not lead.hld_code:
+                        lead.hld_code = self._default_hld(lead)
+                    if not lead.lld_code:
+                        lead.lld_code = self._default_lld(lead)
+                    if lead_dict.get("notion_page_id"):
+                        lead.notion_lead_page_id = lead_dict["notion_page_id"]
+                    self.stitcher.transition(lead.id, "strategized", db=db)
+                    results.append((lead, proposal))
+                except Exception as exc:
+                    self.stitcher.mark_error(lead.id, "strategizing", str(exc), db=db)
+                    print(f"⚠️ Strategy generation failed for '{lead.title}': {exc}")
+            db.commit()
+            return results
+        finally:
+            db.close()
+
+    def _default_hld(self, lead):
+        return (
+            "graph TD\n"
+            f"    A[Lead: {lead.title}] --> B[Freelance-OS Strategist]\n"
+            "    B --> C[Architecture Proposal]\n"
+            "    C --> D[Implementation Workspace]\n"
+            "    D --> E[Notion / Client Updates]\n"
+        )
+
+    def _default_lld(self, lead):
+        stack = ", ".join(lead.suggested_stack or ["Python", "Ollama", "Gemini"])
+        return (
+            "graph TD\n"
+            "    UI[Client Request] --> API[Service Layer]\n"
+            "    API --> DB[(Lead / Strategy Storage)]\n"
+            f"    API --> WORKER[Execution Modules: {stack}]\n"
+            "    WORKER --> TESTS[Test & Verification Layer]\n"
+        )
 
 if __name__ == "__main__":
     # Test lead for verification
