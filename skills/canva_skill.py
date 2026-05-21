@@ -13,12 +13,30 @@ class CanvaSkill:
 
     def __init__(self, api_token=None, template_ids=None):
         self.api_token = api_token or os.getenv("CANVA_API_KEY")
-        self.template_ids = template_ids or {
+        raw_template_ids = template_ids or {
             "proposal": os.getenv("CANVA_PROPOSAL_TEMPLATE_ID"),
             "contract": os.getenv("CANVA_CONTRACT_TEMPLATE_ID"),
             "roadmap": os.getenv("CANVA_ROADMAP_TEMPLATE_ID"),
         }
-        self.enabled = bool(self.api_token)
+        self.template_ids = {
+            label: value
+            for label, value in raw_template_ids.items()
+            if value and not self._is_placeholder(value)
+        }
+        self.enabled = bool(self.api_token and not self._is_placeholder(self.api_token))
+
+    def get_configuration_status(self):
+        missing_template_labels = [
+            label
+            for label in ("proposal", "contract", "roadmap")
+            if label not in self.template_ids
+        ]
+        return {
+            "api_token_configured": self.enabled,
+            "configured_templates": sorted(self.template_ids.keys()),
+            "missing_templates": missing_template_labels,
+            "ready": self.enabled and bool(self.template_ids),
+        }
 
     def populate_template(self, template_id, data_map, title=None):
         if not self.enabled or not template_id:
@@ -42,6 +60,10 @@ class CanvaSkill:
         """
         Creates proposal, contract, and roadmap deliverables when Canva is configured.
         """
+        config_status = self.get_configuration_status()
+        if not config_status["ready"]:
+            return {"_configuration": {"ok": False, **config_status}}
+
         deliverables = {}
         data_map = self._build_data_map(strategy_data)
 
@@ -100,3 +122,7 @@ class CanvaSkill:
             "pdf_url": data.get("url") or data.get("download_url"),
             "raw": data,
         }
+
+    def _is_placeholder(self, value):
+        normalized = str(value).strip().lower()
+        return not normalized or normalized.startswith("your_")

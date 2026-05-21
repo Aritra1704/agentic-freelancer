@@ -83,3 +83,23 @@ def test_invalid_transition_raises():
         assert "Invalid transition" in str(exc)
     else:
         raise AssertionError("Expected invalid transition to raise ValueError.")
+
+
+def test_mark_refinement_failed_sets_explicit_status(monkeypatch):
+    lead = FakeLead(status=PipelineStatus.REFINING.value)
+    session = FakeSession(lead)
+    captured = {}
+
+    monkeypatch.setattr(
+        "core.orchestrator.MemoryManager.remember_verbatim",
+        lambda **kwargs: captured.update(kwargs),
+    )
+
+    stitcher = Stitcher()
+    updated = stitcher.mark_refinement_failed(lead.id, "Missing technical doubts.", db=session)
+
+    assert session.committed is True
+    assert updated.status == PipelineStatus.REFINEMENT_FAILED.value
+    assert updated.error_message == "Missing technical doubts."
+    assert captured["interaction_type"] == "refinement_failed"
+    assert captured["metadata"]["status"] == PipelineStatus.REFINEMENT_FAILED.value

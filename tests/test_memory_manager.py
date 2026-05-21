@@ -1,5 +1,6 @@
 import datetime
 
+from core.agent_manager import AgentRegistry
 from agents.strategist_agent import StrategistAgent
 from core.memory_manager import MemoryManager
 
@@ -168,10 +169,14 @@ def test_strategist_prompt_includes_conversion_guidelines(monkeypatch, tmp_path)
 
     portfolio_path = tmp_path / "portfolio.md"
     portfolio_path.write_text("portfolio context", encoding="utf-8")
+    resume_path = tmp_path / "resume.md"
+    resume_path.write_text("resume context", encoding="utf-8")
 
+    AgentRegistry.clear()
     strategist = StrategistAgent.__new__(StrategistAgent)
     strategist.llm = FakeLLM()
     strategist.portfolio_path = str(portfolio_path)
+    strategist.resume_path = str(resume_path)
     strategist.conversion_playbook = "Use persuasion ethically and make ROI concrete."
     strategist.canva_skill = type(
         "DummyCanvaSkill",
@@ -192,14 +197,22 @@ def test_strategist_prompt_includes_conversion_guidelines(monkeypatch, tmp_path)
         },
     )()
     strategist.pre_flight_check = lambda job_data: "No historical negative constraints found."
+    strategist._register_sub_agents()
 
     strategist.analyze_lead(
         {
             "title": "AI agent project",
             "description": "Build an agent.",
             "url": "https://example.com/job",
+            "technical_doubts": [
+                "What integrations are required?",
+                "What security boundary applies?",
+                "What defines milestone one success?",
+            ],
         }
     )
 
-    assert "### EXPERT CONVERSION GUIDELINES" in captured["prompt"]
+    assert "Freelancer context:" in captured["prompt"]
     assert "Use persuasion ethically and make ROI concrete." in captured["prompt"]
+    assert "portfolio context" in captured["prompt"]
+    assert "resume context" in captured["prompt"]

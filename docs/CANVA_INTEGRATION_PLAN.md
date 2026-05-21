@@ -3,6 +3,13 @@
 ## 1. Goal
 Automate the generation of branded, professional client deliverables (Proposals, Contracts) using your Canva Plus subscription and the Canva API.
 
+## Current State
+- `skills/canva_skill.py` is implemented.
+- `StrategistAgent` already invokes the Canva skill and passes deliverable metadata into the Notion flow.
+- `.env.example` already contains the expected Canva environment variable names.
+- The skill now distinguishes placeholder config from real config instead of treating any non-empty token as enabled.
+- Live Canva verification is still blocked in the current environment because the configured access token returns `invalid_access_token`, and no real template IDs are configured.
+
 ## 2. Implementation Phases
 
 ### Phase 1: Canva Setup
@@ -23,7 +30,8 @@ Automate the generation of branded, professional client deliverables (Proposals,
 - Integrate the resulting PDF link into the Notion "Client Portal".
 
 ## 3. Backlog & Priority
-- [ ] Configure Canva API App and template IDs.
+- [ ] Configure Canva API App and replace placeholder template IDs with live values.
+- [ ] Verify end-to-end PDF generation against the real Canva environment.
 - [x] Develop `CanvaSkill` module.
 - [x] Map JSON fields to Canva design placeholders.
 - [x] Integrate into `StrategistAgent` and Notion portal workflow.

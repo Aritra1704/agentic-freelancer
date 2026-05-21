@@ -60,11 +60,15 @@ class FreelanceOS:
         """
         print("\n🪡 Running Stitch Orchestrator...")
         pending = self.stitcher.get_pending_tasks()
-        if not pending[PipelineStatus.SCRAPED.value] and not pending[PipelineStatus.REFINED.value]:
+        if (
+            not pending[PipelineStatus.SCRAPED.value]
+            and not pending[PipelineStatus.REFINEMENT_FAILED.value]
+            and not pending[PipelineStatus.REFINED.value]
+        ):
             await self.run_hunt(refine=False)
             pending = self.stitcher.get_pending_tasks()
 
-        if pending[PipelineStatus.SCRAPED.value]:
+        if pending[PipelineStatus.SCRAPED.value] or pending[PipelineStatus.REFINEMENT_FAILED.value]:
             self.processor.refine_new_leads()
             pending = self.stitcher.get_pending_tasks()
 

@@ -1,4 +1,7 @@
 # freelance-os/agents/strategist_agent.py
+from agents.pricing_predictor import PricingPredictor
+from agents.proposal_engine import ProposalEngine
+from core.agent_manager import AgentRegistry
 from core.llm_factory import LLMFactory
 from core.memory_manager import MemoryManager
 from core.notion_service import NotionService
@@ -6,6 +9,7 @@ from core.orchestrator import Stitcher
 from core.skill_loader import load_playbook
 from skills.canva_skill import CanvaSkill
 from skills.notion_skill import NotionSkill
+
 
 class StrategistAgent:
     """
@@ -16,11 +20,26 @@ class StrategistAgent:
     def __init__(self):
         self.llm = LLMFactory.get_model_instance("pro")
         self.portfolio_path = "context/portfolio.md"
+        self.resume_path = "context/resume.md"
         self.notion_service = NotionService()
         self.stitcher = Stitcher()
         self.canva_skill = CanvaSkill()
         self.notion_skill = NotionSkill()
         self.conversion_playbook = load_playbook("marketing-psychology", max_chars=5000)
+        self._register_sub_agents()
+
+    def _register_sub_agents(self):
+        # The strategist owns the concrete instances so they can share the active LLM
+        # and personal context paths with the proposal runtime.
+        AgentRegistry.register(
+            "proposal_engine",
+            ProposalEngine(
+                llm=self.llm,
+                portfolio_path=self.portfolio_path,
+                resume_path=self.resume_path,
+            ),
+        )
+        AgentRegistry.register("pricing_predictor", PricingPredictor())
 
     def pre_flight_check(self, job_data):
         """
@@ -46,32 +65,34 @@ class StrategistAgent:
         """
         Performs an 'Internal Grill' and generates a technical proposal.
         """
-        with open(self.portfolio_path, "r") as f:
-            portfolio = f.read()
-
         # MemPalace: Prioritized Context Loading (Spatial Organization)
         # Load previous winning strategy context from the 'strategy' Room
         previous_strategies = MemoryManager.get_room_context(MemoryManager.ROOM_STRATEGY, limit=3)
         negative_constraints = self.pre_flight_check(job_data)
         conversion_guidelines = self.conversion_playbook or "No conversion playbook available."
-
-        prompt = (
-            f"As a Senior AI Architect, analyze this job: {job_data['title']}. \n"
-            f"Description: {job_data.get('description', 'N/A')} \n\n"
-            f"My Portfolio Context: {portfolio} \n\n"
-            f"Historical Strategy Context (MemPalace): {previous_strategies} \n\n"
-            f"Historical Failure Guardrails (Negative Constraints): {negative_constraints} \n\n"
-            f"### EXPERT CONVERSION GUIDELINES\n{conversion_guidelines}\n\n"
-            "Generate a HIGH-VALUE TECHNICAL PROPOSAL. Follow this structure strictly:\n\n"
-            "1. THE ALIGNMENT (Grill-Me): Start by asking the client 3 high-signal technical questions that prove you've spotted hidden complexities in their request.\n"
-            "2. THE PROACTIVE WORKFLOW: Provide a 'Day 1 to Day 3' roadmap.\n"
-            "3. THE TECHNICAL EDGE: Explain the 'Bridge' (Gemini + Local Ollama).\n"
-            "4. THE LONG-TERM VALUE: Mention the 'Context Memory Layer' (MemPalace-inspired).\n"
-            "5. THE PITCH: Summary of ROI."
+        proposal_engine = AgentRegistry.get("proposal_engine")
+        proposal_response = proposal_engine.execute(
+            "generate_proposal",
+            {
+                "job_title": job_data["title"],
+                "job_description": job_data.get("description", "N/A"),
+                "technical_doubts": job_data.get("technical_doubts") or [],
+                "freelancer_context": (
+                    f"Historical Strategy Context (MemPalace): {previous_strategies}\n\n"
+                    f"Historical Failure Guardrails (Negative Constraints): {negative_constraints}\n\n"
+                    f"### EXPERT CONVERSION GUIDELINES\n{conversion_guidelines}\n\n"
+                    "Proposal requirements:\n"
+                    "1. Lead with high-signal alignment.\n"
+                    "2. Include a Day 1 to Day 3 workflow.\n"
+                    "3. Explain the Gemini + Ollama bridge.\n"
+                    "4. Mention the context memory layer.\n"
+                    "5. Close on ROI."
+                ),
+            },
         )
-
-        response = self.llm.invoke(prompt)
-        proposal_content = response.content
+        if proposal_response["status"] != "success":
+            raise ValueError(proposal_response["artifact"]["message"])
+        proposal_content = proposal_response["artifact"]["content"]
 
         # MemPalace: Verbatim Storage for Critical Data
         # Save the full generated proposal verbatim for future learning
@@ -144,18 +165,27 @@ class StrategistAgent:
                     "description": lead.description,
                     "notion_page_id": lead.notion_lead_page_id or (lead.raw_data or {}).get("notion_page_id"),
                     "suggested_stack": lead.suggested_stack or (lead.raw_data or {}).get("tags", []),
+                    "technical_doubts": lead.technical_doubts or [],
                     "quotation": lead.quotation or (lead.raw_data or {}).get("quotation"),
                 }
                 try:
+                    if len(lead_dict["technical_doubts"]) < 3:
+                        raise ValueError("Lead is missing refinement-grade technical_doubts. Re-run refinement before strategy.")
+                    pricing_response = AgentRegistry.get("pricing_predictor").execute(
+                        "estimate_price",
+                        {
+                            "job_description": lead_dict["description"],
+                            "budget": lead_dict["budget"],
+                            "technical_doubts": lead_dict["technical_doubts"],
+                            "suggested_stack": lead_dict["suggested_stack"],
+                        },
+                    )
+                    if pricing_response["status"] == "success":
+                        lead_dict["quotation"] = pricing_response["artifact"]["content"]
                     proposal = self.analyze_lead(lead_dict)
                     lead.pitch_content = proposal
                     lead.suggested_stack = lead_dict["suggested_stack"] or lead.suggested_stack
-                    if not lead.technical_doubts:
-                        lead.technical_doubts = [
-                            "Confirm deployment environment and data boundaries.",
-                            "Clarify acceptance criteria for the first milestone.",
-                            "Confirm integration constraints and API ownership.",
-                        ]
+                    lead.technical_doubts = lead_dict["technical_doubts"]
                     if not lead.milestones:
                         lead.milestones = [
                             "Day 1: discovery and architecture alignment",
@@ -163,7 +193,7 @@ class StrategistAgent:
                             "Day 3: validation, polish, and handoff",
                         ]
                     if not lead.quotation:
-                        lead.quotation = {"baseline": lead.budget, "premium": None}
+                        lead.quotation = lead_dict["quotation"] or {"baseline": lead.budget, "premium": None}
                     if not lead.hld_code:
                         lead.hld_code = self._default_hld(lead)
                     if not lead.lld_code:
@@ -173,7 +203,10 @@ class StrategistAgent:
                     self.stitcher.transition(lead.id, "strategized", db=db)
                     results.append((lead, proposal))
                 except Exception as exc:
-                    self.stitcher.mark_error(lead.id, "strategizing", str(exc), db=db)
+                    if "technical_doubts" in str(exc):
+                        self.stitcher.mark_refinement_failed(lead.id, str(exc), db=db)
+                    else:
+                        self.stitcher.mark_error(lead.id, "strategizing", str(exc), db=db)
                     print(f"⚠️ Strategy generation failed for '{lead.title}': {exc}")
             db.commit()
             return results

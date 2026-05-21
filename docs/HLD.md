@@ -60,7 +60,10 @@ To transform from a CLI tool into a comprehensive Strategy Engine, we are planni
 - [x] **Docker Skill:** `skills/docker_skill.py` now generates deployment assets and performs real build verification when Docker is present.
 - [x] **Refactor Leads:** `Lead` now stores structured strategy fields (HLD/LLD/quotation/milestones/feedback).
 - [x] **Stitch Orchestration Engine:** State machine and `run-orchestrator` CLI flow implemented (`docs/STITCH_ORCHESTRATOR_PLAN.md`).
-- [ ] **Canva Integration:** Code path is implemented, but live Canva app credentials/template IDs still need real environment configuration.
+- [x] **Refinement Guardrails:** The refinement stage now enforces `technical_doubts` as a required output and routes invalid payloads into `refinement_failed` for recovery.
+- [x] **Dashboard Completion:** The UI now renders `technical_doubts` plus the broader structured strategy payload exposed by the API.
+- [ ] **Canva Integration:** Code path is implemented and now validates placeholder config more explicitly, but live Canva verification is still blocked by an invalid configured access token and missing real template IDs.
+- [x] **Proposal Identity Source of Truth:** The strategist now reads both `context/portfolio.md` and `context/resume.md`, and the resume content has been personalized.
 
 ### Backlog
 For detailed system gaps and future tasks, see [BACKLOG.md](./BACKLOG.md).

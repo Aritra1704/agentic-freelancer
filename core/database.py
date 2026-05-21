@@ -19,6 +19,7 @@ class PipelineStatus(str, Enum):
     SCRAPED = "scraped"
     REFINING = "refining"
     REFINED = "refined"
+    REFINEMENT_FAILED = "refinement_failed"
     STRATEGIZING = "strategizing"
     STRATEGIZED = "strategized"
     APPLIED = "applied"
@@ -79,6 +80,8 @@ class VerbatimLog(Base):
 
 
 def init_db():
+    from core.task_model import Task  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
     _ensure_lead_columns()
 

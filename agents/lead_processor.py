@@ -7,6 +7,11 @@ from core.notion_service import NotionService
 from core.orchestrator import Stitcher
 from core.skill_loader import load_playbook
 
+
+class RefinementValidationError(ValueError):
+    """Raised when the refinement payload is missing required strategy fields."""
+
+
 class LeadProcessor:
     """
     Refines raw data from The Scout into clean, structured JSON using Ollama,
@@ -51,6 +56,32 @@ class LeadProcessor:
             return json_str
         return text.strip()
 
+    def _validate_technical_doubts(self, clean_data):
+        raw_questions = clean_data.get("technical_doubts")
+        if not isinstance(raw_questions, list):
+            raise RefinementValidationError("Refinement output is missing the required 'technical_doubts' list.")
+
+        # Normalize and deduplicate questions before persisting them back onto the lead.
+        normalized_questions = []
+        seen_questions = set()
+        for question in raw_questions:
+            if not isinstance(question, str):
+                continue
+            cleaned = question.strip()
+            if len(cleaned) < 12:
+                continue
+            normalized_key = cleaned.lower()
+            if normalized_key in seen_questions:
+                continue
+            seen_questions.add(normalized_key)
+            normalized_questions.append(cleaned)
+
+        if len(normalized_questions) < 3:
+            raise RefinementValidationError(
+                "Refinement output must include at least 3 distinct technical_doubts questions."
+            )
+        return normalized_questions
+
     def refine_new_leads(self, limit=None):
         """
         Processes all leads with status 'scraped' from the database.
@@ -71,9 +102,10 @@ class LeadProcessor:
             prompt = (
                 "You are a data cleaner. Below is raw text from a web scraper. "
                 "Extract a valid JSON object for this job. "
-                "Required fields: 'title', 'budget', 'url'. "
+                "Required fields: 'title', 'budget', 'url', 'technical_doubts'. "
                 "Optional fields: 'opportunity_score' (0-100 integer), 'qualification_notes' (one sentence), "
-                "'tags' (list of technologies or skills), 'technical_doubts' (list of client questions to resolve). "
+                "'tags' (list of technologies or skills). "
+                "'technical_doubts' must be a list of at least 3 high-signal technical questions the client must answer before implementation. "
                 "If budget is missing, use 'Unknown'. Return ONLY the JSON. "
                 f"### MARKET SIZING GUIDELINES\n{self.market_sizing_playbook or 'No market sizing playbook available.'}\n\n"
                 f"### MARKET OPPORTUNITY GUIDELINES\n{self.market_opportunity_playbook or 'No market opportunity playbook available.'}\n\n"
@@ -85,6 +117,7 @@ class LeadProcessor:
             
             try:
                 clean_data = json.loads(clean_json_str)
+                technical_doubts = self._validate_technical_doubts(clean_data)
                 # Update lead in DB
                 lead.title = clean_data.get("title", lead.title)
                 lead.budget = clean_data.get("budget", lead.budget)
@@ -96,8 +129,7 @@ class LeadProcessor:
                 if "tags" in clean_data and isinstance(clean_data["tags"], list):
                     merged_raw_data["tags"] = clean_data["tags"]
                     lead.suggested_stack = clean_data["tags"]
-                if "technical_doubts" in clean_data and isinstance(clean_data["technical_doubts"], list):
-                    lead.technical_doubts = clean_data["technical_doubts"]
+                lead.technical_doubts = technical_doubts
                 
                 # Check for Notion page ID if missing in DB but exists in Notion
                 if not merged_raw_data.get("notion_page_id"):
@@ -118,6 +150,9 @@ class LeadProcessor:
                     )
                 except Exception as notion_exc:
                     print(f"⚠️ Notion status sync failed for lead {lead.id}: {notion_exc}")
+            except (json.JSONDecodeError, RefinementValidationError) as e:
+                print(f"⚠️ Refinement validation failed for lead {lead.id}: {e}")
+                self.stitcher.mark_refinement_failed(lead.id, str(e), db=db)
             except Exception as e:
                 print(f"⚠️ Error refining lead {lead.id}: {e}")
                 self.stitcher.mark_error(lead.id, "refining", str(e), db=db)
