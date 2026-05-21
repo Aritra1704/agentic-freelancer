@@ -7,8 +7,11 @@
 }
 
 body {
+  min-height: 100vh;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(182, 98, 57, 0.2), transparent 30%),
-    linear-gradient(180deg, #f6f3eb 0%, #edf0e8 100%);
+    radial-gradient(circle at top left, rgba(182, 98, 57, 0.2), transparent 28%),
+    radial-gradient(circle at top right, rgba(65, 93, 67, 0.16), transparent 24%),
+    linear-gradient(180deg, #f6f3eb 0%, #edf0e8 56%, #e7ece6 100%);
   color: #101418;
 }
