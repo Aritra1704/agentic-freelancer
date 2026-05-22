@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Freelance-OS Control Tower",
-  description: "Task board and manual agent trigger dashboard for Freelance-OS."
+  description: "Lead inbox, task board, and manual agent triggers for Freelance-OS."
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

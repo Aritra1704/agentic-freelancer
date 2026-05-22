@@ -6,7 +6,7 @@ from core.database import Lead, SessionLocal
 from core.notion_service import NotionService
 from core.orchestrator import Stitcher
 from core.skill_loader import load_playbook
-
+from core.scoring import LeadScorer
 
 class RefinementValidationError(ValueError):
     """Raised when the refinement payload is missing required strategy fields."""
@@ -102,10 +102,12 @@ class LeadProcessor:
             prompt = (
                 "You are a data cleaner. Below is raw text from a web scraper. "
                 "Extract a valid JSON object for this job. "
-                "Required fields: 'title', 'budget', 'url', 'technical_doubts'. "
+                "Required fields: 'title', 'budget', 'url', 'technical_doubts', 'job_id', 'engagement_type', 'duration'. "
                 "Optional fields: 'opportunity_score' (0-100 integer), 'qualification_notes' (one sentence), "
                 "'tags' (list of technologies or skills). "
                 "'technical_doubts' must be a list of at least 3 high-signal technical questions the client must answer before implementation. "
+                "'engagement_type' must be one of: 'One-time', 'Contract', 'Hourly'. "
+                "'duration' must describe the duration (e.g., '1 week', '2 months', 'long-term'). "
                 "If budget is missing, use 'Unknown'. Return ONLY the JSON. "
                 f"### MARKET SIZING GUIDELINES\n{self.market_sizing_playbook or 'No market sizing playbook available.'}\n\n"
                 f"### MARKET OPPORTUNITY GUIDELINES\n{self.market_opportunity_playbook or 'No market opportunity playbook available.'}\n\n"
@@ -118,9 +120,31 @@ class LeadProcessor:
             try:
                 clean_data = json.loads(clean_json_str)
                 technical_doubts = self._validate_technical_doubts(clean_data)
+                
+                # Calculate priority and valuation
+                budget_val = 0.0
+                if isinstance(clean_data.get("budget"), (int, float)):
+                    budget_val = float(clean_data["budget"])
+                elif isinstance(clean_data.get("budget"), str):
+                    # Basic extraction of numbers from budget string
+                    nums = re.findall(r'\d+', clean_data["budget"].replace(',', ''))
+                    if nums:
+                        budget_val = float(nums[0])
+                
+                priority, valuation = LeadScorer.calculate_priority(
+                    clean_data.get("engagement_type", "Hourly"),
+                    clean_data.get("duration", "unknown"),
+                    budget_val
+                )
+
                 # Update lead in DB
                 lead.title = clean_data.get("title", lead.title)
                 lead.budget = clean_data.get("budget", lead.budget)
+                lead.job_id = clean_data.get("job_id")
+                lead.engagement_type = clean_data.get("engagement_type")
+                lead.valuation_label = valuation
+                lead.priority = priority
+
                 merged_raw_data = dict(lead.raw_data or {})
                 if "opportunity_score" in clean_data:
                     merged_raw_data["opportunity_score"] = clean_data["opportunity_score"]
@@ -130,6 +154,7 @@ class LeadProcessor:
                     merged_raw_data["tags"] = clean_data["tags"]
                     lead.suggested_stack = clean_data["tags"]
                 lead.technical_doubts = technical_doubts
+
                 
                 # Check for Notion page ID if missing in DB but exists in Notion
                 if not merged_raw_data.get("notion_page_id"):

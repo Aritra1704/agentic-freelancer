@@ -93,6 +93,10 @@ class StrategistAgent:
         if proposal_response["status"] != "success":
             raise ValueError(proposal_response["artifact"]["message"])
         proposal_content = proposal_response["artifact"]["content"]
+        
+        # Artifact Generation Gate
+        if not proposal_content:
+            raise ValueError("Failed to generate valid proposal content.")
 
         # MemPalace: Verbatim Storage for Critical Data
         # Save the full generated proposal verbatim for future learning

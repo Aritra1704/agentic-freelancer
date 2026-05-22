@@ -27,7 +27,11 @@ class Stitcher:
             PipelineStatus.STRATEGIZING.value,
             PipelineStatus.ERROR.value,
         },
-        PipelineStatus.STRATEGIZING.value: {PipelineStatus.STRATEGIZED.value, PipelineStatus.ERROR.value},
+        PipelineStatus.STRATEGIZING.value: {
+            PipelineStatus.STRATEGIZED.value,
+            PipelineStatus.REFINEMENT_FAILED.value,
+            PipelineStatus.ERROR.value,
+        },
         PipelineStatus.STRATEGIZED.value: {
             PipelineStatus.APPLIED.value,
             PipelineStatus.WON.value,
@@ -57,6 +61,11 @@ class Stitcher:
             current_status = self._normalize_status(lead.status)
             if next_status != current_status and next_status not in self.ALLOWED_TRANSITIONS.get(current_status, set()):
                 raise ValueError(f"Invalid transition from '{current_status}' to '{next_status}'.")
+
+            # Artifact Generation Gate
+            if next_status == PipelineStatus.WON.value:
+                if not lead.pitch_content or not lead.quotation:
+                    raise ValueError("Cannot transition to WON: Missing pitch_content or quotation artifacts.")
 
             lead.status = next_status
             lead.last_updated_at = utcnow()

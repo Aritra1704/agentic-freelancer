@@ -1,34 +1,19 @@
 # Freelance OS: Architectural Blueprint (Full Lifecycle)
 
 ## The Team
-1. **Sales Lead (`freelance-os`):** External-facing. Searches for jobs, handles client comms, writes proposals, handles billing/invoicing.
-2. **Legal/Compliance Agent (NEW):** Internal-facing. Reviews contracts, ensures SOW compliance, validates final deliverables for security/privacy before client delivery.
-3. **Developer (`localclaw`):** Internal-facing (Agentic Kernel). Autonomous developer with file system and CLI access. Runs in a Plan-Act-Verify loop.
+1. **Sales Lead (`freelance-os`):** Owns the **Sales Pipeline**. Finds jobs, performs strategy, crafts pitches, manages client communication, closes deals.
+2. **Legal/Compliance Agent:** Owns the **Compliance Gates**. Reviews agreements (Pre-Won) and audits deliverables (Post-Dev).
+3. **Developer (`localclaw`):** Owns the **Development Pipeline**. Executes technical tasks ONLY after a project is `WON`.
 
-## Lifecycle & Interaction Flow
-1. **Sales Lead:** Finds job -> Negotiates -> Agrees on Price/Scope.
-2. **Legal Agent:** Receives agreement -> Reviews Contract -> Validates Compliance -> **Approves for Dev**.
-3. **Developer (`localclaw`):** Picks up task from queue -> Develops -> Tests -> Validates -> Marks **Ready for Delivery**.
-4. **Legal Agent:** Performs final check (e.g., secrets scanning, PII check) -> **Approves for Sales**.
-5. **Sales Lead:** Receives approval -> Sends final delivery -> Requests payment.
+## Lifecycle Flow
+1. **Sales Pipeline (freelance-os):** Vetted Lead -> STRATEGIZING (Strategy/Pitch) -> PITCHING -> NEGOTIATING -> **WON**.
+2. **Development Pipeline (localclaw):** WON -> IN_DEVELOPMENT -> COMPLIANCE_CHECK -> READY_FOR_DELIVERY -> COMPLETED.
 
-## Interaction Model
-- **Persistence:** All work is defined in a shared PostgreSQL `task_board` table (Agile/Jira-style).
-- **Communication:** Agents read/write tasks and update status based on their role.
-- **Independence:** All three are separate processes on the Mac.
-
-## Task Board Schema (Agile Structure)
-| Field | Purpose |
-| :--- | :--- |
-| `task_id` | Unique ID |
-| `ticket_name` | Short summary |
-| `description` | Requirements & Specs |
-| `priority` | 1 (High) to 5 (Low) |
-| `status` | BACKLOG, LEGAL_REVIEW, PENDING, IN_PROGRESS, COMPLIANCE_CHECK, READY_FOR_DELIVERY, COMPLETED |
-| `assignee` | "freelance-os" \| "legal_agent" \| "localclaw" |
-| `notes` | Log of blockers or progress |
+## Task Board Schema
+- **Sales Pipeline:** Managed in `leads` table.
+- **Development Pipeline:** Managed in `task_board` table.
+- **The Bridge:** Status `WON` triggers `LeadService.promote_to_dev_board()`.
 
 ## Capability Assessment
-- **`freelance-os`:** Event-driven sales orchestrator.
-- **`Legal Agent`:** Validation and compliance gatekeeper.
-- **`localclaw`:** Persistent autonomous development kernel.
+- **`freelance-os`:** Business strategy, communication, and commercial negotiation.
+- **`localclaw`:** Technical execution, testing, and system-level verification.

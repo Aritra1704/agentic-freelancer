@@ -75,6 +75,10 @@ def contains_risk(text, keywords):
     return [keyword for keyword in keywords if keyword in lowered]
 
 
+def task_review_text(task):
+    return " ".join(filter(None, [task.description, task.notes]))
+
+
 def run_sales_scan(db=None):
     managed_db = db or SessionLocal()
     close_db = db is None
@@ -142,7 +146,7 @@ def run_legal_review(db=None):
         blocked = 0
 
         for task in legal_review_tasks:
-            risk_hits = contains_risk(" ".join(filter(None, [task.description, task.notes])), CONTRACT_RISK_KEYWORDS)
+            risk_hits = contains_risk(task_review_text(task), CONTRACT_RISK_KEYWORDS)
             if risk_hits:
                 task.status = "BLOCKED"
                 task.assignee = "freelance-os"
@@ -159,7 +163,7 @@ def run_legal_review(db=None):
             approved_for_dev += 1
 
         for task in compliance_tasks:
-            risk_hits = contains_risk(" ".join(filter(None, [task.description, task.notes])), COMPLIANCE_RISK_KEYWORDS)
+            risk_hits = contains_risk(task_review_text(task), COMPLIANCE_RISK_KEYWORDS)
             if risk_hits:
                 task.status = "BLOCKED"
                 task.assignee = "localclaw"

@@ -1,6 +1,8 @@
 import uuid
+
 from core.database import SessionLocal
 from core.task_model import Task
+
 
 class TaskQueueManager:
     """
@@ -16,8 +18,8 @@ class TaskQueueManager:
                 ticket_name=ticket_name,
                 description=description,
                 priority=priority,
-                status='BACKLOG',
-                assignee=assignee
+                status="BACKLOG",
+                assignee=assignee,
             )
             managed_db.add(task)
             managed_db.commit()
@@ -30,7 +32,12 @@ class TaskQueueManager:
         managed_db = db or SessionLocal()
         close_db = db is None
         try:
-            return managed_db.query(Task).filter(Task.status == status).order_by(Task.priority.asc()).all()
+            return (
+                managed_db.query(Task)
+                .filter(Task.status == status)
+                .order_by(Task.priority.asc())
+                .all()
+            )
         finally:
             if close_db:
                 managed_db.close()

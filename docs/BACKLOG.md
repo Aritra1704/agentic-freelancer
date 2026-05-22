@@ -28,6 +28,7 @@ It is intended to reflect actual code state, not earlier planning assumptions.
 ## Priority 3: Dashboard & UX
 - [x] **Finish dashboard support for strategy fields:** `dashboard/app/page.tsx` now renders `technical_doubts` alongside `suggested_stack`.
 - [x] **Improve lead detail visibility in the dashboard:** The dashboard now surfaces milestones, quotation, HLD/LLD, and pitch content through a dedicated lead-detail panel.
+- [x] **Lead Vetting Enhancements:** Automated lead prioritization based on job ID, engagement type, budget, and duration; implemented in backend and surfaced in `LeadInbox` dashboard.
 
 ## Notes
 - The `.env.example` file already includes the required Canva variables. The remaining work is real configuration and validation, not variable naming or template scaffolding.

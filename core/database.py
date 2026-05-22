@@ -3,7 +3,7 @@ import os
 from enum import Enum
 
 from dotenv import load_dotenv
-from sqlalchemy import JSON, Column, DateTime, String, Text, UniqueConstraint, create_engine, inspect, text
+from sqlalchemy import JSON, Column, DateTime, Integer, String, Text, UniqueConstraint, create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
@@ -58,6 +58,10 @@ class Lead(Base):
     notion_lead_page_id = Column(String)
     notion_strategy_page_id = Column(String)
     error_message = Column(Text)
+    job_id = Column(String)
+    engagement_type = Column(String)
+    valuation_label = Column(String)
+    priority = Column(Integer)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     last_updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     __table_args__ = (UniqueConstraint("url", name="_url_uc"),)
@@ -113,6 +117,10 @@ def _ensure_lead_columns():
         "notion_strategy_page_id": "ALTER TABLE leads ADD COLUMN notion_strategy_page_id VARCHAR",
         "error_message": "ALTER TABLE leads ADD COLUMN error_message TEXT",
         "last_updated_at": "ALTER TABLE leads ADD COLUMN last_updated_at TIMESTAMP",
+        "job_id": "ALTER TABLE leads ADD COLUMN job_id VARCHAR",
+        "engagement_type": "ALTER TABLE leads ADD COLUMN engagement_type VARCHAR",
+        "valuation_label": "ALTER TABLE leads ADD COLUMN valuation_label VARCHAR",
+        "priority": "ALTER TABLE leads ADD COLUMN priority INTEGER",
     }
 
     with engine.begin() as connection:

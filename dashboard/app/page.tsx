@@ -2,32 +2,8 @@
 
 import { startTransition, useEffect, useState } from "react";
 
-type Task = {
-  task_id: string;
-  ticket_name: string;
-  description: string;
-  priority: number;
-  status: string;
-  assignee: string | null;
-  notes: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-};
-
-type BoardPayload = {
-  statuses: string[];
-  counts: Record<string, number>;
-  tasks: Task[];
-  columns: Record<string, Task[]>;
-  updated_at: string;
-};
-
-type TriggerSummary = {
-  agent: "sales" | "legal";
-  total_processed: number;
-  run_at: string;
-  [key: string]: string | number;
-};
+import LeadInbox from "./components/LeadInbox";
+import { BoardPayload, LeadInboxPayload, TriggerSummary } from "../lib/types";
 
 const METRIC_LABELS: Record<string, string> = {
   BACKLOG: "Queued",
@@ -75,19 +51,25 @@ function formatAgentSummary(summary: TriggerSummary | null) {
 }
 
 export default function Page() {
+  const [activeView, setActiveView] = useState<"inbox" | "board">("inbox");
   const [board, setBoard] = useState<BoardPayload | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [inbox, setInbox] = useState<LeadInboxPayload | null>(null);
+  const [isBoardLoading, setIsBoardLoading] = useState(true);
+  const [isInboxLoading, setIsInboxLoading] = useState(true);
+  const [isBoardRefreshing, setIsBoardRefreshing] = useState(false);
+  const [isInboxRefreshing, setIsInboxRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runningAgent, setRunningAgent] = useState<"sales" | "legal" | null>(null);
+  const [actingLeadId, setActingLeadId] = useState<string | null>(null);
+  const [actingLeadAction, setActingLeadAction] = useState<"approve" | "reject" | null>(null);
   const [lastSummary, setLastSummary] = useState<TriggerSummary | null>(null);
 
   async function loadBoard(options?: { silent?: boolean }) {
     const silent = options?.silent ?? false;
     if (silent) {
-      setIsRefreshing(true);
+      setIsBoardRefreshing(true);
     } else {
-      setIsLoading(true);
+      setIsBoardLoading(true);
     }
 
     try {
@@ -102,14 +84,49 @@ export default function Page() {
 
       startTransition(() => {
         setBoard(payload);
-        setError(null);
       });
-    } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : "Unable to load task board.";
-      setError(message);
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      setIsBoardLoading(false);
+      setIsBoardRefreshing(false);
+    }
+  }
+
+  async function loadInbox(options?: { silent?: boolean }) {
+    const silent = options?.silent ?? false;
+    if (silent) {
+      setIsInboxRefreshing(true);
+    } else {
+      setIsInboxLoading(true);
+    }
+
+    try {
+      const response = await fetch("/api/leads", {
+        cache: "no-store"
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to load lead inbox.");
+      }
+
+      startTransition(() => {
+        setInbox(payload);
+      });
+    } finally {
+      setIsInboxLoading(false);
+      setIsInboxRefreshing(false);
+    }
+  }
+
+  async function refreshAll(options?: { silent?: boolean }) {
+    const silent = options?.silent ?? false;
+
+    try {
+      await Promise.all([loadBoard({ silent }), loadInbox({ silent })]);
+      setError(null);
+    } catch (loadError) {
+      const message = loadError instanceof Error ? loadError.message : "Unable to refresh dashboard.";
+      setError(message);
     }
   }
 
@@ -128,7 +145,7 @@ export default function Page() {
       }
 
       setLastSummary(payload);
-      await loadBoard({ silent: true });
+      await refreshAll({ silent: true });
     } catch (runError) {
       const message = runError instanceof Error ? runError.message : `Unable to run ${agent} agent.`;
       setError(message);
@@ -137,17 +154,46 @@ export default function Page() {
     }
   }
 
+  async function actOnLead(leadId: string, action: "approve" | "reject") {
+    setActingLeadId(leadId);
+    setActingLeadAction(action);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/leads/${leadId}`, {
+        method: action === "approve" ? "POST" : "DELETE"
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || `Unable to ${action} lead.`);
+      }
+
+      await refreshAll({ silent: true });
+      if (action === "approve") {
+        setActiveView("board");
+      }
+    } catch (actionError) {
+      const message = actionError instanceof Error ? actionError.message : `Unable to ${action} lead.`;
+      setError(message);
+    } finally {
+      setActingLeadId(null);
+      setActingLeadAction(null);
+    }
+  }
+
   useEffect(() => {
-    loadBoard().catch(() => null);
+    refreshAll().catch(() => null);
 
     const intervalId = window.setInterval(() => {
-      loadBoard({ silent: true }).catch(() => null);
+      refreshAll({ silent: true }).catch(() => null);
     }, 15000);
 
     return () => window.clearInterval(intervalId);
   }, []);
 
   const totalTasks = board?.tasks.length || 0;
+  const totalInboxLeads = inbox?.counts.total || 0;
 
   return (
     <main className="min-h-screen px-5 py-8 text-ink sm:px-6 lg:px-8">
@@ -157,11 +203,11 @@ export default function Page() {
             <div className="max-w-3xl">
               <p className="text-sm uppercase tracking-[0.35em] text-moss">Freelance-OS Dashboard</p>
               <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">
-                Agent Trigger Console
+                Lead Inbox And Delivery Console
               </h1>
               <p className="mt-4 text-base leading-7 text-black/70 sm:text-lg">
-                Manual control surface for the Sales and Legal agents, with a live view of the
-                shared PostgreSQL task board that coordinates delivery.
+                Review inbound leads before they become tasks, then drive approved work through the
+                shared delivery board with manual Sales and Legal agent triggers.
               </p>
             </div>
 
@@ -192,7 +238,13 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-3 md:grid-cols-[1.15fr_0.85fr]">
+          <div className="mt-6 grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-black/10 bg-black/[0.03] p-4 text-sm text-black/70">
+              <p className="text-xs uppercase tracking-[0.2em] text-black/45">Lead Inbox</p>
+              <p className="mt-3 leading-7">
+                {totalInboxLeads} leads currently need approval or rejection before task creation.
+              </p>
+            </div>
             <div className="rounded-2xl border border-black/10 bg-black/[0.03] p-4 text-sm text-black/70">
               <p className="text-xs uppercase tracking-[0.2em] text-black/45">Latest Agent Activity</p>
               <p className="mt-3 leading-7">{formatAgentSummary(lastSummary)}</p>
@@ -201,9 +253,34 @@ export default function Page() {
               <p className="text-xs uppercase tracking-[0.2em] text-black/45">Board Sync</p>
               <p className="mt-3 leading-7">
                 {board ? `Last refreshed ${formatDate(board.updated_at)}` : "Waiting for first board snapshot."}
-                {isRefreshing ? " Refreshing in background..." : ""}
+                {isBoardRefreshing || isInboxRefreshing ? " Refreshing in background..." : ""}
               </p>
             </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setActiveView("inbox")}
+              className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                activeView === "inbox"
+                  ? "border-moss/20 bg-moss text-white"
+                  : "border-black/10 bg-white text-black/65 hover:bg-black/[0.03]"
+              }`}
+            >
+              Lead Inbox
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("board")}
+              className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                activeView === "board"
+                  ? "border-moss/20 bg-moss text-white"
+                  : "border-black/10 bg-white text-black/65 hover:bg-black/[0.03]"
+              }`}
+            >
+              Task Board
+            </button>
           </div>
 
           {error ? (
@@ -213,118 +290,150 @@ export default function Page() {
           ) : null}
         </section>
 
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {(board?.statuses || Object.keys(METRIC_LABELS)).map((status) => (
-            <article key={status} className="rounded-3xl border border-black/10 bg-white/70 p-5 shadow-sm backdrop-blur">
-              <p className="text-xs uppercase tracking-[0.2em] text-black/45">
-                {METRIC_LABELS[status] || status.replaceAll("_", " ")}
-              </p>
-              <div className="mt-4 flex items-end justify-between gap-3">
-                <p className="text-4xl font-semibold">{board?.counts?.[status] || 0}</p>
-                <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${STATUS_STYLES[status] || STATUS_STYLES.BACKLOG}`}>
-                  {status.replaceAll("_", " ")}
-                </span>
-              </div>
-            </article>
-          ))}
-        </section>
+        {activeView === "inbox" ? (
+          <LeadInbox
+            inbox={inbox}
+            isLoading={isInboxLoading}
+            isRefreshing={isInboxRefreshing}
+            actingLeadId={actingLeadId}
+            actingAction={actingLeadAction}
+            onApprove={(leadId) => {
+              actOnLead(leadId, "approve").catch(() => null);
+            }}
+            onReject={(leadId) => {
+              actOnLead(leadId, "reject").catch(() => null);
+            }}
+            formatDate={formatDate}
+          />
+        ) : null}
 
-        <section className="rounded-[2rem] border border-black/10 bg-white/70 p-5 shadow-[0_18px_50px_rgba(16,20,24,0.08)] backdrop-blur sm:p-6">
-          <div className="flex flex-col gap-3 border-b border-black/10 pb-5 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-sm uppercase tracking-[0.3em] text-black/45">Task Board</p>
-              <h2 className="mt-2 text-3xl font-semibold">Delivery Workflow</h2>
-            </div>
-            <p className="text-sm text-black/65">
-              {isLoading ? "Loading task board..." : `${totalTasks} tasks across the shared workflow`}
-            </p>
-          </div>
-
-          {isLoading && !board ? (
-            <div className="py-16 text-center text-sm text-black/55">Loading task board snapshot...</div>
-          ) : null}
-
-          {!isLoading && board && totalTasks === 0 ? (
-            <div className="py-16 text-center text-sm text-black/55">
-              No tasks are in `task_board` yet. Add rows through the pipeline or SQL, then use the
-              triggers here to move work through the lifecycle.
-            </div>
-          ) : null}
-
-          {board && totalTasks > 0 ? (
-            <div className="mt-6 overflow-x-auto pb-2">
-              <div className="flex min-w-max gap-4">
-                {board.statuses.map((status) => {
-                  const tasks = board.columns?.[status] || [];
-
-                  return (
-                    <section
-                      key={status}
-                      className="w-[320px] shrink-0 rounded-[1.75rem] border border-black/10 bg-fog/90 p-4"
+        {activeView === "board" ? (
+          <>
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {(board?.statuses || Object.keys(METRIC_LABELS)).map((status) => (
+                <article
+                  key={status}
+                  className="rounded-3xl border border-black/10 bg-white/70 p-5 shadow-sm backdrop-blur"
+                >
+                  <p className="text-xs uppercase tracking-[0.2em] text-black/45">
+                    {METRIC_LABELS[status] || status.replaceAll("_", " ")}
+                  </p>
+                  <div className="mt-4 flex items-end justify-between gap-3">
+                    <p className="text-4xl font-semibold">{board?.counts?.[status] || 0}</p>
+                    <span
+                      className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${
+                        STATUS_STYLES[status] || STATUS_STYLES.BACKLOG
+                      }`}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.2em] text-black/45">
-                            {METRIC_LABELS[status] || status.replaceAll("_", " ")}
-                          </p>
-                          <h3 className="mt-1 text-lg font-semibold">{status.replaceAll("_", " ")}</h3>
-                        </div>
-                        <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${STATUS_STYLES[status] || STATUS_STYLES.BACKLOG}`}>
-                          {tasks.length}
-                        </span>
-                      </div>
+                      {status.replaceAll("_", " ")}
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </section>
 
-                      <div className="mt-4 space-y-3">
-                        {tasks.length ? (
-                          tasks.map((task) => (
-                            <article
-                              key={task.task_id}
-                              className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="text-xs uppercase tracking-[0.2em] text-black/45">
-                                    Priority {task.priority}
-                                  </p>
-                                  <h4 className="mt-2 text-base font-semibold leading-6">
-                                    {task.ticket_name}
-                                  </h4>
-                                </div>
-                                <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] uppercase tracking-[0.2em] text-black/65">
-                                  {task.assignee || "unassigned"}
-                                </span>
-                              </div>
-
-                              <p className="mt-3 text-sm leading-6 text-black/72">{task.description}</p>
-
-                              {task.notes ? (
-                                <div className="mt-4 rounded-2xl border border-black/8 bg-black/[0.03] p-3">
-                                  <p className="text-[11px] uppercase tracking-[0.2em] text-black/45">Notes</p>
-                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-black/68">
-                                    {task.notes}
-                                  </p>
-                                </div>
-                              ) : null}
-
-                              <div className="mt-4 flex items-center justify-between gap-3 text-xs text-black/45">
-                                <span>ID {task.task_id.slice(0, 8)}</span>
-                                <span>Updated {formatDate(task.updated_at)}</span>
-                              </div>
-                            </article>
-                          ))
-                        ) : (
-                          <div className="rounded-2xl border border-dashed border-black/12 bg-white/55 px-4 py-8 text-center text-sm text-black/45">
-                            No tasks in this state.
-                          </div>
-                        )}
-                      </div>
-                    </section>
-                  );
-                })}
+            <section className="rounded-[2rem] border border-black/10 bg-white/70 p-5 shadow-[0_18px_50px_rgba(16,20,24,0.08)] backdrop-blur sm:p-6">
+              <div className="flex flex-col gap-3 border-b border-black/10 pb-5 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.3em] text-black/45">Task Board</p>
+                  <h2 className="mt-2 text-3xl font-semibold">Delivery Workflow</h2>
+                </div>
+                <p className="text-sm text-black/65">
+                  {isBoardLoading ? "Loading task board..." : `${totalTasks} tasks across the shared workflow`}
+                </p>
               </div>
-            </div>
-          ) : null}
-        </section>
+
+              {isBoardLoading && !board ? (
+                <div className="py-16 text-center text-sm text-black/55">Loading task board snapshot...</div>
+              ) : null}
+
+              {!isBoardLoading && board && totalTasks === 0 ? (
+                <div className="py-16 text-center text-sm text-black/55">
+                  No tasks are in `task_board` yet. Approve a lead from the inbox to create the first
+                  task, then use the triggers here to move work through the lifecycle.
+                </div>
+              ) : null}
+
+              {board && totalTasks > 0 ? (
+                <div className="mt-6 overflow-x-auto pb-2">
+                  <div className="flex min-w-max gap-4">
+                    {board.statuses.map((status) => {
+                      const tasks = board.columns?.[status] || [];
+
+                      return (
+                        <section
+                          key={status}
+                          className="w-[320px] shrink-0 rounded-[1.75rem] border border-black/10 bg-fog/90 p-4"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-black/45">
+                                {METRIC_LABELS[status] || status.replaceAll("_", " ")}
+                              </p>
+                              <h3 className="mt-1 text-lg font-semibold">{status.replaceAll("_", " ")}</h3>
+                            </div>
+                            <span
+                              className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${
+                                STATUS_STYLES[status] || STATUS_STYLES.BACKLOG
+                              }`}
+                            >
+                              {tasks.length}
+                            </span>
+                          </div>
+
+                          <div className="mt-4 space-y-3">
+                            {tasks.length ? (
+                              tasks.map((task) => (
+                                <article
+                                  key={task.task_id}
+                                  className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-xs uppercase tracking-[0.2em] text-black/45">
+                                        Priority {task.priority}
+                                      </p>
+                                      <h4 className="mt-2 text-base font-semibold leading-6">
+                                        {task.ticket_name}
+                                      </h4>
+                                    </div>
+                                    <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] uppercase tracking-[0.2em] text-black/65">
+                                      {task.assignee || "unassigned"}
+                                    </span>
+                                  </div>
+
+                                  <p className="mt-3 text-sm leading-6 text-black/72">{task.description}</p>
+
+                                  {task.notes ? (
+                                    <div className="mt-4 rounded-2xl border border-black/8 bg-black/[0.03] p-3">
+                                      <p className="text-[11px] uppercase tracking-[0.2em] text-black/45">Notes</p>
+                                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-black/68">
+                                        {task.notes}
+                                      </p>
+                                    </div>
+                                  ) : null}
+
+                                  <div className="mt-4 flex items-center justify-between gap-3 text-xs text-black/45">
+                                    <span>ID {task.task_id.slice(0, 8)}</span>
+                                    <span>Updated {formatDate(task.updated_at)}</span>
+                                  </div>
+                                </article>
+                              ))
+                            ) : (
+                              <div className="rounded-2xl border border-dashed border-black/12 bg-white/55 px-4 py-8 text-center text-sm text-black/45">
+                                No tasks in this state.
+                              </div>
+                            )}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          </>
+        ) : null}
       </div>
     </main>
   );
